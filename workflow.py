@@ -9,10 +9,38 @@ import random
 from faker import Factory
 #from pykafka import KafkaClient
 import datetime
-import array
 
 log = logging.getLogger()
 log.setLevel('INFO')
+
+class User(object):
+    def __init__(self,user_id,user_name,user_password,valid):
+        self.user_id = user_id
+        self.user_name = user_name
+        self.user_password = user_password
+        self.valid = valid
+
+class Account(object):
+    def __init__(self,user_id,account_id):
+        self.user_id = user_id
+        self.account_id = account_id
+
+class Deal(object):
+    def __init__(self,user_id,account_id):
+        self.user_id = user_id
+        self.account_id = account_id
+        self.deal_id = deal_id
+
+class Task(object):
+    def __init__(self,user_id,account_id,deal_id,task_id,description,due_date,active,priority):
+        self.user_id = user_id
+        self.account_id = account_id
+        self.deal_id = deal_id
+        self.task_id = task_id
+        self.description = description
+        self.due_date = due_date
+        self.active = active
+        self.priority = priority
 
 class Config(object):
     cassandra_hosts = '127.0.0.1'
@@ -24,47 +52,35 @@ class Generator(object):
         fake = Factory.create()
         users = []
         for i in range(1,user_count):
-            user_id = fake.email()
-            user_name = fake.name()
-            user_password = 'welcome'
-            active = True
-            users.append([user_id, user_name, user_password, active])
+            user = User(fake.email(),fake.name(),'welcome',True)
+            users.append(user])
         return users
 
     def generate_accounts(self,users,account_count):
         fake = Factory.create()
         accounts = []
         for user in users:
-                user_id = user[0]
                 for i in range(1,account_count):
-                    account_id = fake.company()
-                    accounts.append([user_id,account_id])
+                    account = Account(user.user_id,fake.company())
+                    accounts.append(account)
         return accounts
 
     def generate_deals(self,accounts,deal_count):
         fake = Factory.create()
         deals = []
         for account in accounts:
-            user_id = account[0]
-            account_id = account[1]
             for i in range(1,deal_count):
-                deal_id = str(i)
-                deals.append([user_id,account_id,deal_id])
+                deal = Deal(account.user_id,account.account_id,str(i))
+                deals.append(Deal)
         return deals
 
     def generate_tasks(self,deals,task_count):
         fake = Factory.create()
         tasks = []
         for deal in deals:
-            user_id = deal[0]
-            account_id = deal[1]
-            deal_id = deal[2]
-            task_id = fake.bs()
-            description = fake.catch_phrase()
-            due_date = fake.date_time_between(start_date="now", end_date="+1y")
-            active = True
-            priority = fake.random_element(['H', 'M', 'L'])
-            tasks.append([user_id,account_id,deal_id,task_id,description,due_date,active,priority])
+            for i in rance(1,task_count):
+                task = Task(deal.user_id,deal.account_id,deal.deal_id,fake.bs(),fake.catch_phrase(),fake.date_time_between(start_date="now", end_date="+1y"),True,fake.random_element(['H', 'M', 'L']))
+                tasks.append(task)
         return tasks
 
 class SimpleClient(object):
@@ -221,24 +237,24 @@ class WorkflowClient(SimpleClient):
         deals = Generator().generate_deals(accounts,5)
         tasks = Generator().generate_tasks(deals,10)
         #load coupon data
-        for row in users:
+        for user in users:
             self.session.execute_async(self.create_user,
-                [row[0],row[1],row[2],row[3]]
+                [user.user_id,user.user_name,user.user_password,user.valid]
             )
 
-        for row in accounts:
+        for account in accounts:
             self.session.execute_async(self.create_account,
-                [row[0],row[1]]
+                [account.user_id,account.account_id]
             )
 
-        for row in deals:
+        for deal in deals:
             self.session.execute_async(self.create_deal,
-                [row[0],row[1],row[2]]
+                [deal.user_id,deal.account_id,deal.deal_id]
             )
 
-        for row in tasks:
+        for task in tasks:
             self.session.execute_async(self.create_task,
-                [row[0],row[1],row[2],row[3],row[4],row[5],row[6]]
+                [task.user_id,task.account_id,task.deal_id,task.task_id,task.description,task.due_date,task.active,task.priority]
             )
 
 
