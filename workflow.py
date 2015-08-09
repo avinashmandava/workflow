@@ -18,23 +18,56 @@ class Config(object):
     #kafka_host = "127.0.0.1:9092"
     #kafka_topics = 'test'
 
+class Generator(object):
+    def generate_users(user_count):
+        fake = Factory.create()
+        users = []
+        for i in range(1,user_count):
+            user_id = fake.email()
+            user_name = fake.name()
+            user_password = 'welcome'
+            active = True
+            users.append([user_id, user_name, user_password, active])
+        return users
 
-def generate_coupon_data():
-    results = []
-    for i in range(90000,90100):
-        for j in range(1,20):
-            results.append([str(i),str(j),'coupon data', False, False, datetime.datetime.now()])
-    return results
+    def generate_accounts(users,account_count):
+        fake = Factory.create()
+        accounts = []
+        for user in users:
+                user_id = user[0]
+                for i in range(1,account_count):
+                    account_id = fake.company()
+                    accounts.append([user_id,account_id])
+        return accounts
 
-def generate_pd_data():
-    results = []
-    for i in range(1000,1100):
-        for j in range(1,20):
-            results.append([str(i),str(j),'coupon data', False, False,datetime.datetime.now()])
-    return results
+    def generate_deals(accounts,deal_count):
+        fake = Factory.create()
+        deals = []
+        for account in accounts:
+            user_id = account[0]
+            account_id = account[1]
+            for i in range(1,deal_count):
+                deal_id = str(i)
+                deals.append([user_id,account_id,deal_id])
+        return deals
+
+    def generate_tasks(deals,task_count):
+        fake = Factory.create()
+        tasks = []
+        for deal in deals:
+            user_id = deal[0]
+            account_id = deal[1]
+            deal_id = deal[2]
+            task_id = fake.bs()
+            description = fake.catch_phrase()
+            due_date = fake.date_time_between(start_date="now", end_date="+1y")
+            active = True
+            priority = fake.random_element(array=('H', 'M', 'L'))
+            tasks.append([user_id,account_id,deal_id,task_id,description,due_date,active,priority])
+        return tasks
 
 class SimpleClient(object):
-    
+
 
     #Instantiate a session object to be used to connect to the database.
     session = None
@@ -58,9 +91,9 @@ class SimpleClient(object):
     def create_schema(self):
         #self.session.execute("""DROP KEYSPACE IF EXISTS loyalty;""")
         self.session.execute("""CREATE KEYSPACE workflow WITH replication = {'class':'SimpleStrategy', 'replication_factor':1};""")
-        
+
         self.session.execute("""
-            CREATE TABLE tasks_by_user (
+            CREATE TABLE workflow.tasks_by_user (
               user_id text,
               account_id text,
               deal_id text,
@@ -75,7 +108,7 @@ class SimpleClient(object):
         """)
 
         self.session.execute("""
-            CREATE TABLE users (
+            CREATE TABLE workflow.users (
               user_id text PRIMARY KEY,
               user_name text,
               user_password text,
@@ -84,7 +117,7 @@ class SimpleClient(object):
         """)
 
         self.session.execute("""
-            CREATE TABLE accounts_by_user (
+            CREATE TABLE workflow.accounts_by_user (
               user_id text,
               account_id text,
               PRIMARY KEY(user_id, account_id)
@@ -92,7 +125,7 @@ class SimpleClient(object):
         """)
 
         self.session.execute("""
-            CREATE TABLE  deals_by_user (
+            CREATE TABLE workflow.deals_by_user (
               user_id text,
               account_id text,
               deal_id text,
@@ -103,7 +136,7 @@ class SimpleClient(object):
         log.info('Workflow keyspace and schema created.')
 
 
-class BoundStatementsClient(SimpleClient):
+class WorkflowClient(SimpleClient):
     def prepare_statements(self):
         self.create_user = self.session.prepare(
         """
@@ -129,7 +162,7 @@ class BoundStatementsClient(SimpleClient):
         self.create_task = self.session.prepare(
         """
             INSERT INTO workflow.tasks_by_user
-            (user_id, account_id, deal_id, task_id, description, due_date, active_priority)
+            (user_id, account_id, deal_id, task_id, description, due_date, active, priority)
             VALUES (?,?,?,?,?,?,?);
         """)
 
@@ -182,49 +215,41 @@ class BoundStatementsClient(SimpleClient):
 
 
     def load_seed_data(self):
-        coupon_data = generate_coupon_data()
-        pd_data = generate_pd_data()
+        users = Generator.generate_users(100)
+        accounts = Generator.generate_accounts(users,10)
+        deals = Generator.generate_deals(accounts,5)
+        tasks = Generator.generate_tasks(deals,10)
         #load coupon data
-        for row in coupon_data:
-            self.session.execute_async(self.insert_coupon,
-                [row[0],row[1],row[2],row[3],row[4],row[5]]
-            )
-        #load pd data
-        for row in pd_data:
-            self.session.execute_async(self.insert_pd,
-                [row[0],row[1],row[2],row[3],row[4],row[5]]
+        for row in users:
+            self.session.execute_async(self.create_user,
+                [row[0],row[1],row[2],row[3]]
             )
 
-    #load actual data like clips and likes of pds and coupons. in this example just households.
-    def run_clips(self):
-        #set up kafka producer
-        kafka_client = KafkaClient(hosts=Config.kafka_host)
-        kafka_topic = kafka_client.topics[kafka_topics]
-        kafka_producer = kafka_topic.get_producer()
-        for i in range(0,100000):
-            for j in range(0,100):
-                row_zip = str(random.randint(90000,90099))
-                row_offer_id = str(random.randint(1000,1099))
-                update_time = datetime.datetime.now()
-                time_string = update_time.strftime("%Y-%m-%d %H:%M:%S")
-                self.session.execute_async(self.insert_coupon_clip,
-                    [row_zip,row_offer_id,True,update_time]
-                )
-                kafka_producer.produce([row_offer_id+','+time_string+','+str(1)])
-            time.sleep(1)    
+        for row in accounts:
+            self.session.execute_async(self.create_account,
+                [row[0],row[1]]
+            )
+
+        for row in deals:
+            self.session.execute_async(self.create_deal,
+                [row[0],row[1],row[2]]
+            )
+
+        for row in tasks:
+            self.session.execute_async(self.create_task,
+                [row[0],row[1],row[2],row[3],row[4],row[5],row[6]]
+            )
 
 
 def main():
     logging.basicConfig()
-    client = BoundStatementsClient()
+    client = WorkflowClient()
     client.connect([Config.cassandra_hosts])
     client.create_schema()
     time.sleep(10)
     client.prepare_statements()
     client.load_seed_data()
-    client.run_clips()
     client.close()
 
 if __name__ == "__main__":
     main()
-
