@@ -9,6 +9,7 @@ import random
 from faker import Factory
 #from pykafka import KafkaClient
 import datetime
+import array
 
 log = logging.getLogger()
 log.setLevel('INFO')
@@ -19,7 +20,7 @@ class Config(object):
     #kafka_topics = 'test'
 
 class Generator(object):
-    def generate_users(user_count):
+    def generate_users(self,user_count):
         fake = Factory.create()
         users = []
         for i in range(1,user_count):
@@ -30,7 +31,7 @@ class Generator(object):
             users.append([user_id, user_name, user_password, active])
         return users
 
-    def generate_accounts(users,account_count):
+    def generate_accounts(self,users,account_count):
         fake = Factory.create()
         accounts = []
         for user in users:
@@ -40,7 +41,7 @@ class Generator(object):
                     accounts.append([user_id,account_id])
         return accounts
 
-    def generate_deals(accounts,deal_count):
+    def generate_deals(self,accounts,deal_count):
         fake = Factory.create()
         deals = []
         for account in accounts:
@@ -51,7 +52,7 @@ class Generator(object):
                 deals.append([user_id,account_id,deal_id])
         return deals
 
-    def generate_tasks(deals,task_count):
+    def generate_tasks(self,deals,task_count):
         fake = Factory.create()
         tasks = []
         for deal in deals:
@@ -62,7 +63,7 @@ class Generator(object):
             description = fake.catch_phrase()
             due_date = fake.date_time_between(start_date="now", end_date="+1y")
             active = True
-            priority = fake.random_element(array=('H', 'M', 'L'))
+            priority = fake.random_element(['H', 'M', 'L'])
             tasks.append([user_id,account_id,deal_id,task_id,description,due_date,active,priority])
         return tasks
 
@@ -89,7 +90,7 @@ class SimpleClient(object):
 
     #Create the schema. This will drop the existing schema when the application is run.
     def create_schema(self):
-        #self.session.execute("""DROP KEYSPACE IF EXISTS loyalty;""")
+        self.session.execute("""DROP KEYSPACE IF EXISTS workflow;""")
         self.session.execute("""CREATE KEYSPACE workflow WITH replication = {'class':'SimpleStrategy', 'replication_factor':1};""")
 
         self.session.execute("""
@@ -141,7 +142,7 @@ class WorkflowClient(SimpleClient):
         self.create_user = self.session.prepare(
         """
             INSERT INTO workflow.users
-            (user_id, user_email, user_name, user_password)
+            (user_id, user_name, user_password, valid)
             VALUES (?,?,?,?);
         """)
 
@@ -163,7 +164,7 @@ class WorkflowClient(SimpleClient):
         """
             INSERT INTO workflow.tasks_by_user
             (user_id, account_id, deal_id, task_id, description, due_date, active, priority)
-            VALUES (?,?,?,?,?,?,?);
+            VALUES (?,?,?,?,?,?,?,?);
         """)
 
         self.set_duedate = self.session.prepare(
@@ -187,7 +188,7 @@ class WorkflowClient(SimpleClient):
             VALUES (?,?,?,?,?);
         """)
 
-        sef.set_active = self.session.prepare(
+        self.set_active = self.session.prepare(
         """
             INSERT INTO workflow.tasks_by_user
             (user_id, account_id, deal_id, task_id, active)
@@ -196,29 +197,29 @@ class WorkflowClient(SimpleClient):
 
         self.get_deals = self.session.prepare(
         """
-            SELECT user_id, account_id, deal_id FROM deals_by_user
-            WHERE user_id = ?
+            SELECT user_id, account_id, deal_id FROM workflow.deals_by_user
+            WHERE user_id = ? AND account_id = ?
         """)
 
         self.get_tasks = self.session.prepare(
         """
-            SELECT user_id, account_id, deal_id FROM deals_by_user
-            WHERE user_id = ?
+            SELECT user_id, account_id, deal_id FROM workflow.tasks_by_user
+            WHERE user_id = ? AND account_id = ? AND deal_id = ?
         """)
 
         self.get_user = self.session.prepare(
         """
-            SELECT user_id, user_name, user_password, valid FROM users
+            SELECT user_id, user_name, user_password, valid FROM workflow.users
             WHERE user_id = ?
         """)
 
 
 
     def load_seed_data(self):
-        users = Generator.generate_users(100)
-        accounts = Generator.generate_accounts(users,10)
-        deals = Generator.generate_deals(accounts,5)
-        tasks = Generator.generate_tasks(deals,10)
+        users = Generator().generate_users(100)
+        accounts = Generator().generate_accounts(users,10)
+        deals = Generator().generate_deals(accounts,5)
+        tasks = Generator().generate_tasks(deals,10)
         #load coupon data
         for row in users:
             self.session.execute_async(self.create_user,
